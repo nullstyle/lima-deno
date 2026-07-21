@@ -58,6 +58,7 @@ Deno.test("create from raw yaml pipes it verbatim via stdin '-'", async () => {
 Deno.test("remaining create flags map to their limactl spellings", async () => {
   const { lima, fake } = client();
   await lima.create("kitchen", { url: "https://example.com/t.yaml" }, {
+    arch: "x86_64",
     rosetta: true,
     cpus: 8,
     memoryGiB: 16,
@@ -68,7 +69,8 @@ Deno.test("remaining create flags map to their limactl spellings", async () => {
     set: [".ssh.localPort = 2222"],
   });
   assertEquals(fake.commandLines(), [
-    "limactl start --name=kitchen --rosetta --cpus=8 --memory=16 --disk=100 " +
+    "limactl start --name=kitchen --arch=x86_64 --rosetta --cpus=8 " +
+    "--memory=16 --disk=100 " +
     "--mount=/src --mount=/data:w --network=lima:shared --plain " +
     "--set=.ssh.localPort = 2222 --tty=false https://example.com/t.yaml",
   ]);

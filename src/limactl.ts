@@ -64,6 +64,12 @@ export type CreateSource =
 export interface CreateOptions extends CallOptions {
   /** `--vm-type`. */
   readonly vmType?: "qemu" | "vz";
+  /**
+   * `--arch` (`x86_64`, `aarch64`, `riscv64`, `armv7l`, `s390x`, `ppc64le`).
+   * Flags override template values; a foreign arch needs `vmType: "qemu"`
+   * (TCG emulation — slow) and QEMU installed.
+   */
+  readonly arch?: string;
   /** `--nested-virt` (vz; Apple Silicon M3+, macOS 15+; limactl >= 2.1). */
   readonly nestedVirtualization?: boolean;
   /** `--rosetta`. */
@@ -324,6 +330,7 @@ function resolveSource(
 function createFlags(options: CreateOptions): string[] {
   return [
     ...(options.vmType === undefined ? [] : [`--vm-type=${options.vmType}`]),
+    ...(options.arch === undefined ? [] : [`--arch=${options.arch}`]),
     ...(options.nestedVirtualization === true ? ["--nested-virt"] : []),
     ...(options.rosetta === true ? ["--rosetta"] : []),
     ...(options.cpus === undefined ? [] : [`--cpus=${options.cpus}`]),

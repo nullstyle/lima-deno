@@ -112,3 +112,40 @@ export {
   renderLimaYaml,
   type RenderOptions,
 } from "./src/config/mod.ts";
+
+// Image building & capture (also on the "./image" subpath):
+export {
+  buildImage,
+  type BuildStep,
+  type BuiltImage,
+  captureImage,
+  type CaptureImageOptions,
+  configFromImage,
+  DEFAULT_SEAL_SCRIPT,
+  hostArch,
+  ImageBuildError,
+  type ImageBuildOptions,
+  type ImageBuildPhase,
+  type ImageBuildSpec,
+  ImageCaptureError,
+  type ImageEvent,
+  type ImageFormat,
+  ImageStore,
+  ImageStoreError,
+  type ImageStoreOptions,
+  type ImageStorePutOptions,
+  type LimaArch,
+  type QemuImgCallOptions,
+  type QemuImgLike,
+  type QemuImgLikeConvertOptions,
+  type QemuImgLikeInfo,
+  sha256File,
+  type Sha256FileOptions,
+  type StoredImage,
+  toImageSpec,
+} from "./src/image/mod.ts";
+
+// Convenience re-exports from the qemu-img driver dependency (the class
+// itself lives in `@nullstyle/qemu-img`; option types here reference it only
+// structurally, via QemuImgLike):
+export { QemuImgMissingError, QemuImgOutputError } from "@nullstyle/qemu-img";

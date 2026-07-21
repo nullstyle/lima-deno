@@ -5,6 +5,47 @@ All notable changes to `@nullstyle/lima` are documented here. The format follows
 follow [semantic versioning](https://semver.org/) from 1.0 onward — until then,
 breaking changes ride a minor bump.
 
+## [0.2.0] — Unreleased
+
+### Added
+
+- The `./image` subpath (also re-exported from the root): build custom Lima
+  images programmatically.
+  - `captureImage(instance, …)` — bake a stopped instance's disk
+    (`~/.lima/<name>/disk`, the Lima 2.x layout) into a standalone image: qcow2
+    (zlib-compressed by default; needs `qemu-img`) or raw (cloned with `cp`,
+    zero host dependencies from vz disks), with atomic output and a `sha256:`
+    digest. ASIF and Lima 1.x diffdisk layouts are detected and refused.
+  - `buildImage(lima, spec)` — the declarative orchestrator: ephemeral `--plain`
+    builder VM → typed provision steps (`run`/`copyIn`/`fn`) → graded seal
+    (`DEFAULT_SEAL_SCRIPT`: host keys, machine-id, authorized_keys, caches;
+    overridable/skippable) → capture → cleanup (`keepOnFailure` keeps the
+    builder). Failures wrap in `ImageBuildError` with the phase and step.
+    Cross-arch builds via `arch:` (enforces `vmType: "qemu"` + QEMU in
+    preflight, 30-minute TCG readiness default).
+  - `toImageSpec`/`configFromImage` — turn a `BuiltImage` into a pinned,
+    single-entry `images:` config (digest mismatches fail loudly); `hostArch()`;
+    `sha256File` (streaming, via `@std/crypto`).
+  - `ImageStore` — a local catalog: digest-named files plus a deterministic,
+    atomically-written `manifest.json`; `put`/`get`/`list`/`remove`/`resolve`.
+  - Progress via a typed `onEvent` callback (phases, steps, digest progress) —
+    the library still never logs.
+- `CreateOptions.arch` → `limactl start --arch=…`.
+- `tools/image_smoke.ts` (`deno task smoke:image`): the manual real-VM gate —
+  build → tamper-check the digest pin → boot a derived VM → assert baked
+  provisioning, fresh machine-id, and disk growth; cross-arch section behind
+  `IMAGE_SMOKE_CROSS_ARCH=1`.
+
+### Changed
+
+- First runtime dependencies: `@std/crypto` (streaming digests) and
+  `@nullstyle/qemu-img` (the qemu-img driver; its runner seam is structurally
+  identical to this package's). Public option types reference it only
+  structurally (`QemuImgLike`), and its two error classes are re-exported for
+  `catch` convenience.
+- The `test` task now also grants `--allow-write=tests/.tmp` (image tests
+  exercise real files there).
+
 ## [0.1.0] — 2026-07-21
 
 ### Added
