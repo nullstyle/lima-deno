@@ -10,7 +10,7 @@
     "./testing": "./testing/mod.ts"
   },
   "imports": {
-    "@nullstyle/qemu-img": "jsr:@nullstyle/qemu-img@^0.1",
+    "@nullstyle/qemu-img": "jsr:@nullstyle/qemu-img@^0.2",
     "@std/assert": "jsr:@std/assert@^1",
     "@std/crypto": "jsr:@std/crypto@^1"
   },

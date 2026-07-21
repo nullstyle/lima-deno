@@ -1,14 +1,14 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@nullstyle/qemu-img@0.1": "0.1.0",
+    "jsr:@nullstyle/qemu-img@0.2": "0.2.0",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/crypto@1": "1.1.0",
     "jsr:@std/internal@^1.0.12": "1.0.14"
   },
   "jsr": {
-    "@nullstyle/qemu-img@0.1.0": {
-      "integrity": "6cc8c29dedb6c03a38292bc100b1763791b33c9a2ed8a0ca08bc44d91aeb978a"
+    "@nullstyle/qemu-img@0.2.0": {
+      "integrity": "a1f898b25a5455e626c2e94fc1ef0b9ae1f9be5e992983d8c6d8da6b8061bc61"
     },
     "@std/assert@1.0.19": {
       "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
@@ -25,7 +25,7 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@nullstyle/qemu-img@0.1",
+      "jsr:@nullstyle/qemu-img@0.2",
       "jsr:@std/assert@1",
       "jsr:@std/crypto@1"
     ]
