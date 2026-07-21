@@ -159,6 +159,27 @@ Deno.test("exec user implies sudo -u; env exports precede the script; strict:fal
   assertEquals(fake.calls[1]!.args.at(-1), "echo raw");
 });
 
+Deno.test("exec uncapped threads through to the runner options", async () => {
+  const { vm, fake } = handle();
+  await vm.exec("giant-output", { uncapped: true });
+  // FakeLimactl records stdin only; assert via a runner wrapper instead.
+  const seen: (boolean | undefined)[] = [];
+  const spy = {
+    run: (
+      bin: string,
+      args: readonly string[],
+      options?: { uncapped?: boolean },
+    ) => {
+      seen.push(options?.uncapped);
+      return fake.run(bin, args, options);
+    },
+  };
+  const spied = new LimaInstance("vm1", { runner: spy });
+  await spied.exec("more", { uncapped: true });
+  await spied.exec("less");
+  assertEquals(seen, [true, undefined]);
+});
+
 Deno.test("exec workdir threads to limactl shell --workdir", async () => {
   const { vm, fake } = handle();
   await vm.exec("pwd", { workdir: "/srv" });

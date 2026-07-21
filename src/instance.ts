@@ -63,6 +63,8 @@ export interface GuestExecOptions extends CallOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** Wrap with `set -euo pipefail; `. @default true */
   readonly strict?: boolean;
+  /** Skip the runner's output-capture cap (for parse-feeding output). */
+  readonly uncapped?: boolean;
 }
 
 /** A guest result: the command result plus guest provenance. */
@@ -79,6 +81,8 @@ export interface GuestCommandOptions extends CallOptions {
   readonly check?: boolean;
   /** Guest working directory (`limactl shell --workdir`). */
   readonly workdir?: string;
+  /** Skip the runner's output-capture cap (for parse-feeding output). */
+  readonly uncapped?: boolean;
 }
 
 /** Options for {@linkcode LimaInstance.copyIn} / {@linkcode LimaInstance.copyOut}. */
@@ -309,7 +313,11 @@ export class LimaInstance {
     const result = await this.#o.runner.run(
       this.#o.bin,
       args,
-      buildRunOptions(this.#o, options),
+      buildRunOptions(
+        this.#o,
+        options,
+        options.uncapped === true ? { uncapped: true } : {},
+      ),
     );
     if (options.check === true && !result.success) {
       throw new GuestExecError(result, this.#o.bin, args, this.name, script);
@@ -332,7 +340,11 @@ export class LimaInstance {
     const result = await this.#o.runner.run(
       this.#o.bin,
       args,
-      buildRunOptions(this.#o, options),
+      buildRunOptions(
+        this.#o,
+        options,
+        options.uncapped === true ? { uncapped: true } : {},
+      ),
     );
     const script = argv.join(" ");
     if (options.check === true && !result.success) {
