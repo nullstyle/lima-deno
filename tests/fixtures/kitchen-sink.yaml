@@ -1,0 +1,73 @@
+# Kitchen-sink fixture.
+
+minimumLimaVersion: "1.0.0"
+base: template://ubuntu-24.04
+vmType: qemu
+nestedVirtualization: false
+rosetta:
+  enabled: true
+  binfmt: true
+os: Linux
+arch: x86_64
+images:
+  # Primary image.
+  - location: https://example.com/img.qcow2
+    arch: x86_64
+    digest: sha256:abc123
+cpus: 8
+memory: "16GiB"
+disk: "100GiB"
+additionalDisks:
+  - name: scratch
+    format: true
+    fsType: ext4
+
+# Host mounts.
+mounts:
+  - location: "~"
+    writable: false
+  - location: "/tmp/shared"
+    mountPoint: "/mnt/shared"
+    writable: true
+mountType: virtiofs
+ssh:
+  localPort: 2222
+  loadDotSSHPubKeys: true
+  forwardAgent: false
+containerd:
+  system: false
+  user: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      apt-get install -y curl
+  # Runs unprivileged.
+  - mode: user
+    script: |
+      echo user-setup
+probes:
+  - mode: readiness
+    description: "curl is installed"
+    script: |
+      #!/bin/bash
+      command -v curl
+    hint: "provisioning has not finished"
+
+portForwards:
+  - guestIP: "0.0.0.0"
+    guestPort: 80
+    hostIP: "127.0.0.1"
+    hostPort: 8080
+    proto: tcp
+  - guestSocket: "/run/svc.sock"
+    hostSocket: "/tmp/svc.sock"
+    reverse: false
+  - guestPortRange: [9000, 9010]
+    hostPortRange: [9000, 9010]
+    ignore: true
+env:
+  EDITOR: vim
+  SHELL_STYLE: "strict mode"
+dns:
+  - 1.1.1.1

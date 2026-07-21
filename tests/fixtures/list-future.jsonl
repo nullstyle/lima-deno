@@ -1,0 +1,1 @@
+{"name":"next-gen","status":"Hibernated","vmType":"krun","arch":"riscv64","cpus":"lots","memory":8589934592,"newTelemetryField":{"nested":true},"errors":[null,"one real error",42],"config":{"vmType":"krun"}}

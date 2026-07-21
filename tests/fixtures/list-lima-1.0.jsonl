@@ -1,0 +1,2 @@
+{"name":"default","status":"Running","dir":"/Users/dev/.lima/default","vmType":"vz","arch":"aarch64","cpus":4,"memory":4294967296,"disk":107374182400,"network":[{"lima":"user-v2"}],"sshLocalPort":60022,"sshConfigFile":"/Users/dev/.lima/default/ssh.config","hostAgentPID":12345,"driverPID":12346,"errors":[],"protected":false}
+{"name":"broken-vm","status":"Broken","dir":"/Users/dev/.lima/broken-vm","vmType":"qemu","arch":"x86_64","cpus":2,"memory":2147483648,"disk":53687091200,"sshLocalPort":60023,"errors":["hostagent is not running"],"protected":true}
