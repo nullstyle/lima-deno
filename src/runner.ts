@@ -149,10 +149,10 @@ export class DenoCommandRunner implements CommandRunner {
       try {
         await writer.write(new TextEncoder().encode(options.stdin));
         await writer.close();
-      } catch (error) {
-        // The child died (or was aborted) mid-write; the exit status below is
-        // authoritative. An abort still surfaces as CommandAbortedError.
-        if (!signal?.aborted) throw error;
+      } catch {
+        // The child exited (or was aborted) mid-write — e.g. a broken pipe.
+        // Never rethrow here: the exit status below (or the post-output abort
+        // check) is authoritative, and bailing out would leak a live child.
       }
     }
     const { success, code, stdout, stderr } = await child.output();

@@ -172,6 +172,58 @@ Deno.test("mounts: [] is distinct from unset", () => {
   assertEquals(renderLimaYaml({}), "\n");
 });
 
+Deno.test("every empty collection renders as [] / {}, never YAML null", () => {
+  assertEquals(
+    renderLimaYaml({
+      base: [],
+      images: [],
+      portForwards: [],
+      provision: [],
+      env: {},
+    }),
+    `base: []
+images: []
+provision: []
+portForwards: []
+env: {}
+`,
+  );
+});
+
+Deno.test("a value ending in ':' is quoted, never plain", () => {
+  assertEquals(
+    renderLimaYaml({ env: { TRAILING: "value:" } }),
+    `env:
+  TRAILING: "value:"
+`,
+  );
+});
+
+Deno.test("env keys are quoted when not plain scalars", () => {
+  assertEquals(
+    renderLimaYaml({ env: { "MY KEY": "v", "on": "w", NORMAL: "x" } }),
+    `env:
+  "MY KEY": v
+  "on": w
+  NORMAL: x
+`,
+  );
+});
+
+Deno.test("a script whose first line is indented gets an explicit |2 indicator", () => {
+  assertEquals(
+    renderLimaYaml({
+      provision: [{ mode: "system", script: "  indented first\nplain" }],
+    }),
+    `provision:
+  - mode: system
+    script: |2
+        indented first
+      plain
+`,
+  );
+});
+
 /** Exercises every typed key; pinned byte-for-byte by the committed fixture. */
 export const KITCHEN_SINK: LimaConfig = {
   minimumLimaVersion: "1.0.0",

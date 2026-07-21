@@ -24,17 +24,19 @@ export interface LimactlVersion {
  * The limactl window this library targets.
  *
  * `minimum` is the floor {@linkcode import("./limactl.ts").Limactl.requireVersion}
- * checks by default: Lima 1.0.0 is the first stable release with vz
- * `nestedVirtualization`, the modern `template:` locator, and the current
- * `list --json` shape. `tested` is the version the release smoke last ran
- * against.
+ * checks by default. It is 2.1.0 because the library's create path emits
+ * forms older limactl cannot parse: the opaque `template:NAME` locator and
+ * multiple `--set` expressions need limactl >= 2.0.0, and the
+ * `--nested-virt` flag needs >= 2.1.0. (Lima 1.x wanted `template://NAME`
+ * and lacked those flags.) `tested` is the version the release smoke last
+ * ran against.
  */
 export const LIMA_COMPAT: {
   readonly minimum: string;
   readonly tested: string;
 } = Object.freeze({
-  minimum: "1.0.0",
-  tested: "1.0.0",
+  minimum: "2.1.0",
+  tested: "2.1.4",
 });
 
 const VERSION_PATTERN =

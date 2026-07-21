@@ -85,10 +85,32 @@ Deno.test("lifecycle verbs emit the proven argv", async () => {
   assertEquals(fake.instances.size, 0);
 });
 
-Deno.test("delete force:false omits -f", async () => {
+Deno.test("delete force:false omits -f and is refused while Running", async () => {
   const { vm, fake } = handle();
+  await assertRejects(() => vm.delete({ force: false }), CommandError);
+  await vm.stop();
   await vm.delete({ force: false });
-  assertEquals(fake.commandLines(), ["limactl delete vm1"]);
+  assertEquals(fake.commandLines(), [
+    "limactl delete vm1",
+    "limactl stop vm1",
+    "limactl delete vm1",
+  ]);
+  assertEquals(fake.instances.size, 0);
+});
+
+Deno.test("a protected instance refuses deletion until unprotected", async () => {
+  const { vm } = handle();
+  await vm.protect();
+  await assertRejects(() => vm.delete(), CommandError);
+  await vm.unprotect();
+  await vm.delete();
+});
+
+Deno.test("plain stop of a non-Running instance fails; stop -f succeeds", async () => {
+  const { vm, fake } = handle();
+  fake.instances.get("vm1")!.status = "Stopped";
+  await assertRejects(() => vm.stop(), CommandError);
+  await vm.stop({ force: true });
 });
 
 Deno.test("exec emits the proven strict-wrapped bash argv", async () => {
@@ -262,6 +284,27 @@ Deno.test("waitReady times out with the last probe result attached", async () =>
   );
   assertEquals(error.instance, "vm1");
   assertEquals(error.lastResult?.stderr, "not yet");
+});
+
+Deno.test("waitReady with a pre-aborted signal rejects instead of sleeping", async () => {
+  class NeverReady extends FakeLimactl {
+    protected override onGuestScript(_call: GuestScriptCall) {
+      return failed(1, "not yet");
+    }
+  }
+  const fake = new NeverReady();
+  const { vm } = handle("vm1", fake);
+  const controller = new AbortController();
+  const reason = new Error("caller gave up");
+  controller.abort(reason);
+  const error = await assertRejects(() =>
+    vm.waitReady({
+      intervalMs: 5,
+      timeoutMs: 10_000,
+      signal: controller.signal,
+    })
+  );
+  assertEquals(error, reason);
 });
 
 Deno.test("snapshot namespace emits the limactl snapshot argv", async () => {

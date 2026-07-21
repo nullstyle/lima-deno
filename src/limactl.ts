@@ -45,7 +45,10 @@ import {
 /**
  * Where a new instance's configuration comes from:
  * - `{file}` — a rendered template on disk (`limactl start … FILE`);
- * - `{template}` — a builtin template name (`… template:ubuntu-24.04`);
+ * - `{template}` — a builtin template name, emitted as the opaque
+ *   `template:ubuntu-24.04` locator (limactl >= 2.0 spelling — see
+ *   {@linkcode import("./version.ts").LIMA_COMPAT}; Lima 1.x wanted
+ *   `template://NAME`, which is also accepted here and passed through);
  * - `{url}` — a remote template (`… https://…`);
  * - `{yaml}` — pre-rendered YAML piped via stdin (`… -`);
  * - `{config}` — a typed {@linkcode LimaConfig}, rendered and piped via stdin.
@@ -61,7 +64,7 @@ export type CreateSource =
 export interface CreateOptions extends CallOptions {
   /** `--vm-type`. */
   readonly vmType?: "qemu" | "vz";
-  /** `--nested-virt` (vz; Apple Silicon M3+, macOS 15+). */
+  /** `--nested-virt` (vz; Apple Silicon M3+, macOS 15+; limactl >= 2.1). */
   readonly nestedVirtualization?: boolean;
   /** `--rosetta`. */
   readonly rosetta?: boolean;
@@ -77,7 +80,7 @@ export interface CreateOptions extends CallOptions {
   readonly network?: string;
   /** `--plain`. */
   readonly plain?: boolean;
-  /** `--set` yq expressions — the power escape hatch. */
+  /** `--set` yq expressions — the power escape hatch (multiple entries need limactl >= 2.0). */
   readonly set?: readonly string[];
 }
 

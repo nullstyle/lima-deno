@@ -106,6 +106,8 @@ function renderKey(
       const base = config.base!;
       if (typeof base === "string") {
         lines.push(`base: ${scalar(base)}`);
+      } else if (base.length === 0) {
+        lines.push("base: []");
       } else {
         lines.push("base:");
         for (const entry of base) lines.push(`  - ${scalar(entry)}`);
@@ -147,15 +149,9 @@ function renderKey(
         diskFields,
       );
       break;
-    case "mounts": {
-      const mounts = config.mounts!;
-      if (mounts.length === 0) {
-        lines.push("mounts: []");
-      } else {
-        renderEntryList(lines, "mounts", mounts, mountFields);
-      }
+    case "mounts":
+      renderEntryList(lines, "mounts", config.mounts!, mountFields);
       break;
-    }
     case "mountType":
       lines.push(`mountType: ${scalar(config.mountType!)}`);
       break;
@@ -180,9 +176,14 @@ function renderKey(
       );
       break;
     case "env": {
+      const entries = Object.entries(config.env!);
+      if (entries.length === 0) {
+        lines.push("env: {}");
+        break;
+      }
       lines.push("env:");
-      for (const [name, value] of Object.entries(config.env!)) {
-        lines.push(`  ${name}: ${scalar(value)}`);
+      for (const [name, value] of entries) {
+        lines.push(`  ${scalar(name)}: ${scalar(value)}`);
       }
       break;
     }
@@ -205,6 +206,11 @@ function renderEntryList<T extends { readonly comment?: string }>(
   entries: readonly T[],
   fields: FieldRenderer<T>,
 ): void {
+  if (entries.length === 0) {
+    // An empty collection must render `[]` — a bare `key:` is YAML null.
+    lines.push(`${key}: []`);
+    return;
+  }
   lines.push(`${key}:`);
   for (const entry of entries) {
     if (entry.comment !== undefined) pushComment(lines, entry.comment, "  ");
@@ -279,11 +285,17 @@ const forwardFields: FieldRenderer<PortForward> = (forward) => [
   ...(forward.ignore === undefined ? [] : [`ignore: ${forward.ignore}`]),
 ];
 
-/** `script: |` + indented literal block lines (entry-field indent + 2). */
+/**
+ * `script: |` + indented literal block lines (entry-field indent + 2). When
+ * the first non-empty body line itself starts with a space, YAML cannot
+ * infer the content indentation, so an explicit `|2` indicator is emitted.
+ */
 function blockScalar(key: string, script: string): readonly string[] {
   const body = trimTrailingNewlines(script).split("\n");
+  const first = body.find((line) => line.length > 0);
+  const indicator = first !== undefined && first.startsWith(" ") ? "|2" : "|";
   return [
-    `${key}: |`,
+    `${key}: ${indicator}`,
     ...body.map((line) => (line.length === 0 ? "" : `  ${line}`)),
   ];
 }
@@ -311,10 +323,15 @@ const RESERVED = new Set(["true", "false", "null", "yes", "no", "on", "off"]);
 
 /**
  * Render a string scalar: plain iff it is unambiguous, double-quoted (JSON
- * escaping — a valid subset of YAML double-quote style) otherwise.
+ * escaping — a valid subset of YAML double-quote style) otherwise. A value
+ * ending in `:` is never plain (YAML would misread it as a nested mapping).
  */
 function scalar(value: string): string {
-  if (PLAIN_SCALAR.test(value) && !RESERVED.has(value.toLowerCase())) {
+  if (
+    PLAIN_SCALAR.test(value) &&
+    !value.endsWith(":") &&
+    !RESERVED.has(value.toLowerCase())
+  ) {
     return value;
   }
   return JSON.stringify(value);

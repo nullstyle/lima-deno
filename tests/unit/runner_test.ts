@@ -65,6 +65,17 @@ Deno.test("timeoutMs kills a hung child and throws CommandAbortedError", async (
   assertEquals(error.bin, "sleep");
 });
 
+Deno.test("stdin to a child that exits early resolves with its status (no broken-pipe throw, no leaked child)", async () => {
+  const runner = new DenoCommandRunner();
+  // `false` exits immediately without reading stdin; a large write hits a
+  // closed pipe. The run must still resolve with the child's real status.
+  const result = await runner.run("false", [], {
+    stdin: "x".repeat(1 << 20),
+  });
+  assertEquals(result.success, false);
+  assertEquals(result.code, 1);
+});
+
 Deno.test("a pre-aborted signal rejects before spawning", async () => {
   const runner = new DenoCommandRunner();
   const controller = new AbortController();

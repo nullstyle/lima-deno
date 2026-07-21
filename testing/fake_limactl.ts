@@ -119,8 +119,8 @@ export class FakeLimactl implements CommandRunner {
   readonly guestFiles: Map<string, Set<string>> = new Map();
   /** The fake host's disks. */
   readonly disks: Map<string, FakeDiskState> = new Map();
-  /** `limactl --version` stdout. */
-  versionOutput = "limactl version 1.0.6";
+  /** `limactl --version` stdout. Defaults above the LIMA_COMPAT floor. */
+  versionOutput = "limactl version 2.1.4";
 
   readonly #stubs: Stub[] = [];
 
@@ -212,14 +212,35 @@ export class FakeLimactl implements CommandRunner {
         return this.#list(args);
       case "start":
         return this.#start(call);
-      case "stop":
-        return this.#simpleTransition(args, "Stopped");
+      case "stop": {
+        const name = lastPositional(args);
+        const state = this.instances.get(name);
+        if (state === undefined) {
+          return failed(1, `instance "${name}" does not exist`);
+        }
+        // Real limactl refuses a plain stop unless the instance is Running;
+        // only `stop -f` transitions from any state.
+        if (!args.includes("-f") && state.status !== "Running") {
+          return failed(1, `expected status "Running", got "${state.status}"`);
+        }
+        state.status = "Stopped";
+        return ok();
+      }
       case "restart":
         return this.#simpleTransition(args, "Running");
       case "delete": {
         const name = lastPositional(args);
-        if (!this.instances.has(name)) {
+        const state = this.instances.get(name);
+        if (state === undefined) {
           return failed(1, `instance "${name}" does not exist`);
+        }
+        // Real limactl refuses to delete a protected instance, and refuses a
+        // non-forced delete unless the instance is Stopped.
+        if (state.protected === true) {
+          return failed(1, `instance "${name}" is protected`);
+        }
+        if (!args.includes("-f") && state.status !== "Stopped") {
+          return failed(1, `expected status "Stopped", got "${state.status}"`);
         }
         this.instances.delete(name);
         this.guestFiles.delete(name);
@@ -302,9 +323,13 @@ export class FakeLimactl implements CommandRunner {
       return ok();
     }
     // Create form: `limactl start --name=<n> [flags] --tty=false <source>`.
+    // Real limactl REUSES an existing instance (the source is ignored) and
+    // boots it, exiting 0 — mirror that rather than failing.
     const name = nameFlag.slice("--name=".length);
-    if (this.instances.has(name)) {
-      return failed(1, `instance "${name}" already exists`);
+    const existing = this.instances.get(name);
+    if (existing !== undefined) {
+      existing.status = "Running";
+      return ok();
     }
     const vmTypeFlag = args.find((arg) => arg.startsWith("--vm-type="));
     this.setInstance(name, {
@@ -510,8 +535,10 @@ function lastPositional(args: readonly string[]): string {
 function splitGuestPath(
   value: string,
 ): { instance: string; path: string } | undefined {
+  // Mirror real limactl cp: split on the FIRST colon; only a colon-free (or
+  // leading-colon) argument is host-side. A host path containing a colon is
+  // therefore treated as an instance reference — exactly as limactl does.
   const colon = value.indexOf(":");
-  // A colon at position 0 or absent, or a path-like prefix, means host-side.
-  if (colon <= 0 || value.slice(0, colon).includes("/")) return undefined;
+  if (colon <= 0) return undefined;
   return { instance: value.slice(0, colon), path: value.slice(colon + 1) };
 }

@@ -32,4 +32,12 @@ breaking changes ride a minor bump.
 Extracted and generalized from the proven Lima layer of
 [`@nullstyle/studiobox`](https://github.com/nullstyle/studiobox) (its
 `src/cli/exec.ts` / `host_env.ts` / `lima_template.ts`); the `limactl` argv
-shapes are byte-identical to the ones that layer shipped.
+shapes are byte-identical to the ones that layer shipped, with one deliberate
+deviation: the `copyInAsRoot` staging prefix is de-branded to `/tmp/.lima-cp-`
+(exported as `LIMA_CP_STAGING_PREFIX`, overridable per call via
+`stagingPrefix`).
+
+Targets `limactl` >= 2.1.0 (`LIMA_COMPAT.minimum`): the create path uses the
+opaque `template:NAME` locator and repeatable `--set` (limactl >= 2.0) and
+`--nested-virt` (>= 2.1). On older limactl, `requireVersion()` fails with a
+clear error.

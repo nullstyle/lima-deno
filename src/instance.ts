@@ -22,7 +22,11 @@
  * @module
  */
 
-import { type CommandResult, runChecked } from "./runner.ts";
+import {
+  CommandAbortedError,
+  type CommandResult,
+  runChecked,
+} from "./runner.ts";
 import {
   GuestExecError,
   InstanceBrokenError,
@@ -152,11 +156,11 @@ export class LimaInstance {
   }
 
   /** Whether the instance exists (`limactl list -q` membership). */
-  async exists(): Promise<boolean> {
+  async exists(options: CallOptions = {}): Promise<boolean> {
     const result = await this.#o.runner.run(
       this.#o.bin,
       ["list", "-q"],
-      buildRunOptions(this.#o),
+      buildRunOptions(this.#o, options),
     );
     return result.stdout
       .split("\n")
@@ -165,12 +169,12 @@ export class LimaInstance {
   }
 
   /** Typed info via `limactl list --json`, or `undefined` when absent. */
-  async info(): Promise<InstanceInfo | undefined> {
+  async info(options: CallOptions = {}): Promise<InstanceInfo | undefined> {
     const result = await runChecked(
       this.#o.runner,
       this.#o.bin,
       ["list", "--json"],
-      buildRunOptions(this.#o),
+      buildRunOptions(this.#o, options),
     );
     return parseInstanceList(result.stdout).find(
       (info) => info.name === this.name,
@@ -178,19 +182,19 @@ export class LimaInstance {
   }
 
   /** The instance's status, or `undefined` when absent. */
-  async status(): Promise<InstanceStatus | undefined> {
-    return (await this.info())?.status;
+  async status(options: CallOptions = {}): Promise<InstanceStatus | undefined> {
+    return (await this.info(options))?.status;
   }
 
   /**
    * Whether the instance reports `Running`. Probed via the cheap
    * `list --format` text form (no JSON parse for a boolean).
    */
-  async isRunning(): Promise<boolean> {
+  async isRunning(options: CallOptions = {}): Promise<boolean> {
     const result = await this.#o.runner.run(
       this.#o.bin,
       ["list", "--format", "{{.Name}}\t{{.Status}}"],
-      buildRunOptions(this.#o),
+      buildRunOptions(this.#o, options),
     );
     for (const line of result.stdout.split("\n")) {
       const [name, status] = line.split("\t");
@@ -416,13 +420,28 @@ export class LimaInstance {
     const deadline = Date.now() + timeoutMs;
     let last: CommandResult | undefined;
     while (true) {
-      const info = await this.info();
-      if (info?.status === "Broken") {
-        throw new InstanceBrokenError(this.name, info.errors);
-      }
-      last = await this.exec(probe, {
+      // Bound each probe by the remaining budget so a hung limactl call
+      // cannot outlive the documented deadline.
+      const call: CallOptions = {
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      });
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      };
+      try {
+        const info = await this.info(call);
+        if (info?.status === "Broken") {
+          throw new InstanceBrokenError(this.name, info.errors);
+        }
+        last = await this.exec(probe, call);
+      } catch (error) {
+        if (
+          error instanceof CommandAbortedError &&
+          Date.now() >= deadline &&
+          options.signal?.aborted !== true
+        ) {
+          throw new WaitTimeoutError(this.name, timeoutMs, last);
+        }
+        throw error;
+      }
       if (last.success) return;
       if (Date.now() + intervalMs > deadline) {
         throw new WaitTimeoutError(this.name, timeoutMs, last);
@@ -454,6 +473,9 @@ function callOnly(options: CallOptions): CallOptions {
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason ?? new Error("aborted"));
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);

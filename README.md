@@ -59,9 +59,11 @@ console.log(fake.commandLines());
 
 ## Compatibility
 
-Targets `limactl` >= 1.0.0 (`LIMA_COMPAT.minimum`). The real-VM smoke
-(`deno task smoke`, macOS with lima installed) is the release gate; unit tests
-run anywhere Deno runs.
+Targets `limactl` >= 2.1.0 (`LIMA_COMPAT.minimum`) — the create path emits the
+opaque `template:NAME` locator and repeatable `--set` (limactl >= 2.0) and
+`--nested-virt` (>= 2.1). `requireVersion()` reports a clear error on older
+installs. The real-VM smoke (`deno task smoke`, macOS with lima installed) is
+the release gate; unit tests run anywhere Deno runs.
 
 ## License
 

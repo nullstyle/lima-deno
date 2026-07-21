@@ -4,7 +4,6 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { CommandError } from "../../src/runner.ts";
 import { LimaVersionError } from "../../src/errors.ts";
 import { Limactl } from "../../src/limactl.ts";
 import { failed, FakeLimactl } from "../../testing/fake_limactl.ts";
@@ -75,14 +74,12 @@ Deno.test("remaining create flags map to their limactl spellings", async () => {
   ]);
 });
 
-Deno.test("creating a duplicate instance surfaces limactl's error", async () => {
+Deno.test("creating with an existing name reuses and boots it (real limactl behavior)", async () => {
   const { lima, fake } = client();
-  fake.setInstance("dupe");
-  const error = await assertRejects(
-    () => lima.create("dupe", { template: "ubuntu-24.04" }),
-    CommandError,
-  );
-  assertStringIncludes(error.stderr, "already exists");
+  fake.setInstance("dupe", { status: "Stopped" });
+  const vm = await lima.create("dupe", { template: "ubuntu-24.04" });
+  assertEquals(fake.instances.get("dupe")?.status, "Running");
+  assertEquals(vm.name, "dupe");
 });
 
 Deno.test("available() is true when --version succeeds, false when it fails", async () => {
@@ -92,18 +89,18 @@ Deno.test("available() is true when --version succeeds, false when it fails", as
   assertEquals(await lima.available(), false);
 });
 
-Deno.test("version() parses; requireVersion enforces the floor", async () => {
+Deno.test("version() parses; requireVersion enforces the 2.1.0 floor", async () => {
   const { lima, fake } = client();
+  fake.versionOutput = "limactl version 2.1.4";
+  assertEquals((await lima.version()).raw, "2.1.4");
+  assertEquals((await lima.requireVersion()).raw, "2.1.4");
   fake.versionOutput = "limactl version 1.2.1";
-  assertEquals((await lima.version()).raw, "1.2.1");
-  assertEquals((await lima.requireVersion()).raw, "1.2.1");
-  fake.versionOutput = "limactl version 0.19.1";
   const error = await assertRejects(
     () => lima.requireVersion(),
     LimaVersionError,
   );
-  assertEquals(error.found?.raw, "0.19.1");
-  assertEquals(error.minimum, "1.0.0");
+  assertEquals(error.found?.raw, "1.2.1");
+  assertEquals(error.minimum, "2.1.0");
 });
 
 Deno.test("requireVersion accepts an explicit floor", async () => {

@@ -8,7 +8,7 @@ import {
   ok,
 } from "../../testing/fake_limactl.ts";
 
-Deno.test("start creates via --name flag and boots via bare name; duplicates fail", async () => {
+Deno.test("start creates via --name flag and boots via bare name; existing names are reused", async () => {
   const fake = new FakeLimactl();
   const create = await fake.run("limactl", [
     "start",
@@ -22,15 +22,46 @@ Deno.test("start creates via --name flag and boots via bare name; duplicates fai
   assertEquals(fake.instances.get("a")?.status, "Stopped");
   assert((await fake.run("limactl", ["start", "a"])).success);
   assertEquals(fake.instances.get("a")?.status, "Running");
-  const dupe = await fake.run("limactl", [
+  await fake.run("limactl", ["stop", "a"]);
+  // Real limactl reuses an existing instance on the create form (exit 0).
+  const reuse = await fake.run("limactl", [
     "start",
     "--name=a",
     "--tty=false",
     "x",
   ]);
-  assertEquals(dupe.success, false);
+  assert(reuse.success);
+  assertEquals(fake.instances.get("a")?.status, "Running");
   const ghost = await fake.run("limactl", ["start", "ghost"]);
   assertEquals(ghost.success, false);
+});
+
+Deno.test("stop/delete guardrails mirror real limactl", async () => {
+  const fake = new FakeLimactl();
+  fake.setInstance("vm", { status: "Stopped" });
+  // Plain stop of a non-Running instance fails; -f succeeds.
+  assertEquals((await fake.run("limactl", ["stop", "vm"])).success, false);
+  assert((await fake.run("limactl", ["stop", "-f", "vm"])).success);
+  // Non-forced delete of a Running instance fails.
+  fake.instances.get("vm")!.status = "Running";
+  assertEquals((await fake.run("limactl", ["delete", "vm"])).success, false);
+  // A protected instance refuses deletion even with -f.
+  fake.instances.get("vm")!.protected = true;
+  assertEquals(
+    (await fake.run("limactl", ["delete", "-f", "vm"])).success,
+    false,
+  );
+  fake.instances.get("vm")!.protected = false;
+  assert((await fake.run("limactl", ["delete", "-f", "vm"])).success);
+});
+
+Deno.test("cp splits on the first colon exactly like real limactl", async () => {
+  const fake = new FakeLimactl();
+  fake.setInstance("vm");
+  // A colon-bearing host path is treated as an instance reference — the
+  // instance does not exist, so the copy fails (as it would under limactl).
+  const result = await fake.run("limactl", ["cp", "/l", "/tmp/a:b"]);
+  assertEquals(result.success, false);
 });
 
 Deno.test("list --json output round-trips through parseInstanceList", async () => {
