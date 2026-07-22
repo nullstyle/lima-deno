@@ -31,12 +31,13 @@ breaking changes ride a minor bump.
   - Progress via a typed `onEvent` callback (phases, steps, digest progress) —
     the library still never logs.
 - `base: { image }` — derive a build from an image you already built.
-  `buildImage` pins it by digest, sizes the builder's disk to its virtual size
-  (`diskFloorGiB`; a smaller explicit `create.diskGiB` throws
-  `ImageDiskFloorError`), and infers its arch — which also fixes a hole where a
-  derived cross-arch build skipped its preflight and failed inside limactl
-  minutes later. `resolveImageBase` exposes the whole compilation as a pure,
-  assertable function.
+  `buildImage` pins it by digest, sizes the builder's disk to the base's own
+  virtual size (`diskFloorGiB` — never smaller, since Lima refuses to shrink a
+  disk, and never silently inflated to the builder default either; a smaller
+  explicit `create.diskGiB` throws `ImageDiskFloorError`), and infers its arch —
+  which also fixes a hole where a derived cross-arch build skipped its preflight
+  and failed inside limactl minutes later. `resolveImageBase` exposes the whole
+  compilation as a pure, assertable function.
 - `formatImageEvent(event)` — renders one progress event, or `undefined` when
   there is nothing worth printing (`digest-progress` fires per hashed chunk, so
   throttling stays yours). The library still never logs.

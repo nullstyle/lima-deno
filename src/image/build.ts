@@ -157,9 +157,11 @@ export function resolveImageBase(
     source: { config: configFromImage(base.image, base.config ?? {}) },
     create: {
       ...BUILDER_DEFAULTS,
-      // The floor only ratchets up: a base larger than the default demands
-      // more, a smaller one keeps the default.
-      diskGiB: Math.max(BUILDER_DEFAULTS.diskGiB ?? 0, floor),
+      // The base's own size, not the generic default: a caller who built a
+      // deliberately small image should not have deriving from it silently
+      // inflate the result to `BUILDER_DEFAULTS.diskGiB`. Ask for more
+      // explicitly (`diskGiB: Math.max(20, diskFloorGiB(image))`) to grow it.
+      diskGiB: floor,
       ...(arch === undefined ? {} : { arch }),
       ...create,
     },

@@ -190,12 +190,13 @@ try {
     ],
   }, { onEvent, timeoutMs: 900_000 });
 
-  // The floor ratchets: a derived image can never be smaller than its base,
-  // and this is the only place that is observable.
-  if (gen2.virtualSizeBytes < image.virtualSizeBytes) {
+  // A derivation inherits its base's size exactly: never smaller (Lima
+  // refuses to shrink), and never silently inflated to the builder default
+  // either. This is the only place that is observable end to end.
+  if (gen2.virtualSizeBytes !== image.virtualSizeBytes) {
     fail(
-      `derived virtual size shrank: ${gen2.virtualSizeBytes} < ` +
-        `${image.virtualSizeBytes}`,
+      `derived virtual size drifted: ${gen2.virtualSizeBytes} != ` +
+        `${image.virtualSizeBytes} (expected the base's size verbatim)`,
     );
   }
   pass(

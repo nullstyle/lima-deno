@@ -55,11 +55,19 @@ Deno.test("an image base pins the config and raises the disk to its floor", () =
   assertEquals(resolved.arch, "aarch64");
 });
 
-Deno.test("a base smaller than the builder default keeps the default", () => {
+Deno.test("a derivation inherits its base's size, not the builder default", () => {
+  // Caught by the real-VM smoke: an 8GiB gen-1 image derived into a 10GiB
+  // gen 2, because the floor used to be max(BUILDER_DEFAULTS.diskGiB, floor).
+  // A deliberately small image must stay small across generations.
   const resolved = resolveImageBase({
-    image: image({ virtualSizeBytes: 4 * GIB }),
+    image: image({ virtualSizeBytes: 8 * GIB }),
   });
-  assertEquals(resolved.create.diskGiB, 10);
+  assertEquals(resolved.create.diskGiB, 8);
+  assertEquals(
+    resolveImageBase({ image: image({ virtualSizeBytes: 4 * GIB }) })
+      .create.diskGiB,
+    4,
+  );
 });
 
 Deno.test("extra base config merges under the image's pinned entry", () => {
