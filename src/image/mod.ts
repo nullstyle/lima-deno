@@ -46,8 +46,10 @@ export type {
 export {
   ImageBuildError,
   ImageCaptureError,
+  ImageDiskFloorError,
   ImageStoreError,
 } from "./errors.ts";
+export { formatImageEvent } from "./format.ts";
 export { sha256File, type Sha256FileOptions } from "./digest.ts";
 export type {
   QemuImgCallOptions,
@@ -58,6 +60,7 @@ export type {
 export { captureImage, type CaptureImageOptions } from "./capture.ts";
 export {
   configFromImage,
+  diskFloorGiB,
   hostArch,
   type LimaArch,
   toImageSpec,
@@ -66,11 +69,16 @@ export {
   buildImage,
   type BuildStep,
   DEFAULT_SEAL_SCRIPT,
+  type ImageBase,
+  type ImageBaseImage,
   type ImageBuildOptions,
   type ImageBuildSpec,
+  type ResolvedImageBase,
+  resolveImageBase,
 } from "./build.ts";
 export {
   ImageStore,
+  type ImageStoreListOptions,
   type ImageStoreOptions,
   type ImageStorePutOptions,
   type StoredImage,

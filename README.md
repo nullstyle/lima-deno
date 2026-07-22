@@ -78,7 +78,8 @@ const image = await buildImage(lima, {
 // image.digest is a sha256: pin Lima verifies at first boot.
 
 const vm = await lima.create("dev1", {
-  config: configFromImage(image, { disk: "20GiB", mounts: [] }),
+  // No `disk:` needed — Lima's default already exceeds anything built here.
+  config: configFromImage(image, { mounts: [] }),
 });
 await vm.waitReady(); // build-essential is already there
 ```
@@ -88,8 +89,25 @@ graded seal script (host keys, machine-id, authorized_keys — see
 `DEFAULT_SEAL_SCRIPT`), captures the disk, and cleans up. `captureImage` is the
 standalone primitive for baking any stopped instance. Cross-arch builds
 (`arch: "x86_64"` on Apple Silicon) run under `vmType: "qemu"` TCG emulation.
-The optional `ImageStore` catalogs built images in a directory with a
-deterministic manifest and resolves them back to pinned `images:` entries.
+
+To **update an image over time**, hand a previous result back as the base —
+`buildImage` pins it by digest and sizes the builder's disk to it, so a
+generation can never boot smaller than the image it derives from:
+
+```ts
+const next = await buildImage(lima, {
+  base: { image }, // ← the derivation; everything else is unchanged
+  outputPath: "./dev-base-2.qcow2",
+  steps: [{ run: "apt-get update && apt-get -y upgrade", sudo: true }],
+});
+```
+
+The optional `ImageStore` catalogs built images with a deterministic manifest,
+resolves them back to pinned `images:` entries, and answers `latest(prefix)` so
+generations need no naming convention. `formatImageEvent` renders the typed
+progress events, and `withInstance` runs a body against a throwaway VM and
+deletes it. See [examples/devbox_image.ts](examples/devbox_image.ts) for the
+whole lifecycle end to end.
 
 Host requirements: building qcow2 output needs `qemu-img` (`brew install qemu`);
 raw capture from vz instances needs nothing installed. Consumers of a built

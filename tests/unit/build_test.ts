@@ -18,8 +18,13 @@ import {
   ok,
 } from "../../testing/mod.ts";
 import { buildImage, DEFAULT_SEAL_SCRIPT } from "../../src/image/build.ts";
-import { ImageBuildError } from "../../src/image/errors.ts";
-import type { ImageEvent } from "../../src/image/types.ts";
+import {
+  ImageBuildError,
+  ImageDiskFloorError,
+} from "../../src/image/errors.ts";
+import { configFromImage, hostArch } from "../../src/image/spec.ts";
+import { renderLimaYaml } from "../../src/config/render.ts";
+import type { BuiltImage, ImageEvent } from "../../src/image/types.ts";
 
 function shellLine(instance: string, script: string, sudo = false): string {
   const wrapped = strictWrap(script);
@@ -408,6 +413,102 @@ Deno.test("a cleanup failure surfaces as ImageBuildError{cleanup} with the image
     );
     assertEquals(error.phase, "cleanup");
     assertEquals(await Deno.readTextFile(r.outputPath), "IMG");
+  } finally {
+    await cleanup(r);
+  }
+});
+
+Deno.test("a derived base pins the config on stdin and raises --disk", async () => {
+  const r = await rig("b-derived");
+  try {
+    const base: BuiltImage = {
+      path: "/images/gen1.qcow2",
+      format: "qcow2",
+      digest: "sha256:" + "cd".repeat(32),
+      arch: "aarch64",
+      sizeBytes: 1024,
+      virtualSizeBytes: 12 * 1024 ** 3,
+    };
+    await buildImage(r.lima, {
+      base: { image: base },
+      outputPath: r.outputPath,
+      name: "b-derived",
+      seal: false,
+    }, { qemuImg: r.qemuImg });
+
+    assertEquals(
+      r.fakeLima.commandLines()[0],
+      "limactl start --name=b-derived --cpus=2 --memory=2 --disk=12 --plain " +
+        "--tty=false -",
+    );
+    // Read the YAML off the recorded stdin: rig() pre-seeds the instance, so
+    // FakeLimactl's start takes the reuse branch and never records configYaml.
+    assertEquals(
+      r.fakeLima.calls[0].stdin,
+      renderLimaYaml(configFromImage(base)),
+    );
+  } finally {
+    await cleanup(r);
+  }
+});
+
+Deno.test("a derived cross-arch base is refused in preflight, before any VM", async () => {
+  const r = await rig("b-xarch");
+  try {
+    const foreign = hostArch() === "aarch64" ? "x86_64" : "aarch64";
+    const error = await assertRejects(
+      () =>
+        buildImage(r.lima, {
+          // No spec.arch: the arch comes from the image, which used to slip
+          // past the preflight and fail inside limactl minutes later.
+          base: {
+            image: {
+              path: "/images/foreign.qcow2",
+              format: "qcow2",
+              digest: "sha256:" + "ef".repeat(32),
+              arch: foreign,
+              sizeBytes: 1024,
+              virtualSizeBytes: 1024,
+            },
+          },
+          outputPath: r.outputPath,
+          name: "b-xarch",
+        }, { qemuImg: r.qemuImg }),
+      ImageBuildError,
+    );
+    assertEquals(error.phase, "preflight");
+    assertStringIncludes(String(error.cause), "cross-arch");
+    assertEquals(r.fakeLima.calls.length, 0);
+  } finally {
+    await cleanup(r);
+  }
+});
+
+Deno.test("a sub-floor disk fails preflight with ImageDiskFloorError as the cause", async () => {
+  const r = await rig("b-floor");
+  try {
+    const error = await assertRejects(
+      () =>
+        buildImage(r.lima, {
+          base: {
+            image: {
+              path: "/images/big.qcow2",
+              format: "qcow2",
+              digest: "sha256:" + "12".repeat(32),
+              arch: "aarch64",
+              sizeBytes: 1024,
+              virtualSizeBytes: 12 * 1024 ** 3,
+            },
+          },
+          outputPath: r.outputPath,
+          name: "b-floor",
+          create: { diskGiB: 8 },
+        }, { qemuImg: r.qemuImg }),
+      ImageBuildError,
+    );
+    assertEquals(error.phase, "preflight");
+    assertInstanceOf(error.cause, ImageDiskFloorError);
+    assertEquals(r.fakeLima.calls.length, 0);
   } finally {
     await cleanup(r);
   }

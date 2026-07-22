@@ -179,3 +179,59 @@ Deno.test("names are validated before touching the filesystem", async () => {
     await Deno.remove(root, { recursive: true });
   }
 });
+
+Deno.test("list filters by prefix and orders by createdAt on request", async () => {
+  const { root, store, image } = await rig();
+  try {
+    await store.put("devbox-gen1", image);
+    await store.put("other", image);
+    await store.put("devbox-gen2", image);
+
+    assertEquals((await store.list()).map((i) => i.name), [
+      "devbox-gen1",
+      "devbox-gen2",
+      "other",
+    ]);
+    assertEquals(
+      (await store.list({ prefix: "devbox-" })).map((i) => i.name),
+      ["devbox-gen1", "devbox-gen2"],
+    );
+    // Every entry shares FIXED_NOW, so the name tie-break is what keeps this
+    // deterministic rather than insertion-ordered.
+    assertEquals(
+      (await store.list({ order: "createdAt" })).map((i) => i.name),
+      ["devbox-gen1", "devbox-gen2", "other"],
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("latest reads the newest put, with no name convention", async () => {
+  const { root, image } = await rig();
+  try {
+    // An advancing clock: newest by time, not by name — so `gen10` after
+    // `gen2` wins even though it sorts earlier.
+    let tick = 0;
+    const store = new ImageStore({
+      dir: `${root}/store`,
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)),
+    });
+    assertEquals(await store.latest(), undefined);
+
+    await store.put("devbox-gen2", image);
+    await store.put("devbox-gen10", image);
+    await store.put("unrelated", image);
+
+    assertEquals((await store.latest())?.name, "unrelated");
+    assertEquals((await store.latest("devbox-"))?.name, "devbox-gen10");
+    assertEquals(await store.latest("nothing-"), undefined);
+
+    // Documented surprise: re-putting refreshes createdAt, so an older name
+    // becomes newest again.
+    await store.put("devbox-gen2", image);
+    assertEquals((await store.latest("devbox-"))?.name, "devbox-gen2");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});

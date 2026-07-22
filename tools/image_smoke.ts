@@ -14,7 +14,10 @@
  * - a tampered digest fails the create (no silent fallback);
  * - compressed qcow2 output boots under vz (Lima's native zlib reader);
  * - a derived VM with a bigger `disk:` grows on boot (growpart);
- * - the default seal leaves the image bootable with a fresh machine-id.
+ * - the default seal leaves the image bootable with a fresh machine-id;
+ * - a built image can serve as the BASE of another build, stacking two
+ *   generations of provisioning (the premise of examples/devbox_image.ts);
+ * - the builder disk floor is enforced in preflight, before any VM boots.
  *
  * Cross-arch (x86_64 on Apple Silicon via qemu TCG) is exercised only with
  * IMAGE_SMOKE_CROSS_ARCH=1 — it needs `brew install qemu` and tens of
@@ -26,7 +29,15 @@
 import { Limactl } from "../src/limactl.ts";
 import { QemuImg } from "@nullstyle/qemu-img";
 import { buildImage } from "../src/image/build.ts";
-import { configFromImage, hostArch, toImageSpec } from "../src/image/spec.ts";
+import {
+  configFromImage,
+  diskFloorGiB,
+  hostArch,
+  toImageSpec,
+} from "../src/image/spec.ts";
+import { formatImageEvent } from "../src/image/format.ts";
+import { ImageBuildError, ImageDiskFloorError } from "../src/image/errors.ts";
+import { withInstance } from "../src/ephemeral.ts";
 import type { ImageEvent } from "../src/image/types.ts";
 
 const step = (label: string) => console.log(`▸ ${label}`);
@@ -39,10 +50,8 @@ function fail(label: string): never {
 }
 
 function onEvent(event: ImageEvent): void {
-  if (event.type === "phase") console.log(`  · phase: ${event.phase}`);
-  if (event.type === "step") {
-    console.log(`  · step ${event.index + 1}/${event.count}`);
-  }
+  const line = formatImageEvent(event);
+  if (line !== undefined) console.log(`  · ${line}`);
 }
 
 const lima = new Limactl();
@@ -65,8 +74,11 @@ const stamp = Date.now().toString(36);
 const builderName = `img-smoke-b-${stamp}`;
 const derivedName = `img-smoke-d-${stamp}`;
 const negativeName = `img-smoke-x-${stamp}`;
+const gen2Name = `img-smoke-g2-${stamp}`;
+const gen2VmName = `img-smoke-g2vm-${stamp}`;
 const dir = await Deno.makeTempDir({ prefix: "lima-image-smoke-" });
 const outputPath = `${dir}/baked.${format}`;
+const gen2Path = `${dir}/baked-gen2.${format}`;
 
 let builderMachineId = "";
 
@@ -160,6 +172,70 @@ try {
   await derived.delete();
   pass("derived VM deleted");
 
+  // Derivation: build a SECOND generation using the first image as the
+  // builder's base. Nothing else proves a Lima image can serve as its own
+  // base, and it is the whole premise of examples/devbox_image.ts.
+  step(`derive ${gen2Name} from the baked image (a second generation)`);
+  const gen2 = await buildImage(lima, {
+    base: { image },
+    outputPath: gen2Path,
+    format,
+    name: gen2Name,
+    steps: [
+      {
+        run: "touch /opt/img-smoke-marker-2",
+        sudo: true,
+        comment: "drop the second-generation marker",
+      },
+    ],
+  }, { onEvent, timeoutMs: 900_000 });
+
+  // The floor ratchets: a derived image can never be smaller than its base,
+  // and this is the only place that is observable.
+  if (gen2.virtualSizeBytes < image.virtualSizeBytes) {
+    fail(
+      `derived virtual size shrank: ${gen2.virtualSizeBytes} < ` +
+        `${image.virtualSizeBytes}`,
+    );
+  }
+  pass(
+    `derived ${(gen2.sizeBytes / 1024 ** 2).toFixed(0)} MiB, virtual ` +
+      `${(gen2.virtualSizeBytes / 1024 ** 3).toFixed(0)} GiB`,
+  );
+
+  step(`boot from the derived image — both generations' work must survive`);
+  await withInstance(
+    lima,
+    gen2VmName,
+    { config: configFromImage(gen2, { mounts: [] }) },
+    async (vm) => {
+      // The first marker proves gen 1's provisioning survived derivation;
+      // the second proves gen 2's steps ran on top of it.
+      await vm.exec("test -f /opt/img-smoke-marker", { check: true });
+      await vm.exec("test -f /opt/img-smoke-marker-2", { check: true });
+    },
+    { timeoutMs: 900_000 },
+  );
+  pass("both markers present — derivation stacks provisioning");
+
+  // Cheap negative: the disk floor is enforced in preflight, before any VM.
+  step("a sub-floor builder disk is refused before anything boots");
+  try {
+    await buildImage(lima, {
+      base: { image: gen2 },
+      outputPath: `${dir}/never.${format}`,
+      create: { diskGiB: diskFloorGiB(gen2) - 1 },
+      name: `img-smoke-floor-${stamp}`,
+    }, { onEvent });
+    fail("sub-floor disk was accepted");
+  } catch (error) {
+    const cause = error instanceof ImageBuildError ? error.cause : undefined;
+    if (!(cause instanceof ImageDiskFloorError)) {
+      fail(`expected ImageDiskFloorError, got ${error}`);
+    }
+    pass("sub-floor disk rejected in preflight");
+  }
+
   if (Deno.env.get("IMAGE_SMOKE_CROSS_ARCH") === "1") {
     const foreign = hostArch() === "aarch64" ? "x86_64" : "aarch64";
     step(
@@ -199,5 +275,6 @@ try {
 } finally {
   await lima.instance(builderName).delete().catch(() => {});
   await lima.instance(derivedName).delete().catch(() => {});
+  await lima.instance(gen2VmName).delete().catch(() => {});
   await Deno.remove(dir, { recursive: true }).catch(() => {});
 }

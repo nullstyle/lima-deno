@@ -36,6 +36,14 @@ export interface StoredImage extends BuiltImage {
   readonly createdAt: string;
 }
 
+/** Options for {@linkcode ImageStore.list}. */
+export interface ImageStoreListOptions {
+  /** Only images whose name starts with this. */
+  readonly prefix?: string;
+  /** Sort order; ties break by name. @default "name" */
+  readonly order?: "name" | "createdAt";
+}
+
 /** Options for {@linkcode ImageStore.put}. */
 export interface ImageStorePutOptions {
   /**
@@ -85,15 +93,47 @@ export class ImageStore {
     }
   }
 
-  /** Every stored image, sorted by name. */
-  async list(): Promise<StoredImage[]> {
+  /**
+   * Stored images. With no argument: every image, sorted by name — filter and
+   * ordering are opt-in so the default output never changes.
+   */
+  async list(options: ImageStoreListOptions = {}): Promise<StoredImage[]> {
     const manifest = await this.#readManifest();
-    const names = Object.keys(manifest.images).sort();
+    let names = Object.keys(manifest.images).sort();
+    if (options.prefix !== undefined) {
+      const prefix = options.prefix;
+      names = names.filter((name) => name.startsWith(prefix));
+    }
+    if (options.order === "createdAt") {
+      // Ties break by name, which `names` is already sorted by — so a store
+      // whose entries share a timestamp still comes back deterministically.
+      names.sort((a, b) =>
+        manifest.images[a].createdAt.localeCompare(manifest.images[b].createdAt)
+      );
+    }
     const images: StoredImage[] = [];
     for (const name of names) {
       images.push(await this.#stored(name, manifest.images[name]));
     }
     return images;
+  }
+
+  /**
+   * The most recently {@linkcode ImageStore.put} image, optionally within
+   * `prefix` — or `undefined` when there is none.
+   *
+   * Ordered by the `createdAt` the manifest already records, so no naming
+   * convention is parsed and `image-gen10` cannot sort before `image-gen2`.
+   * Note that re-putting an existing name refreshes its `createdAt` and
+   * therefore makes it newest: right for a chain of build generations,
+   * surprising if you are using names as mutable tags.
+   */
+  async latest(prefix?: string): Promise<StoredImage | undefined> {
+    const images = await this.list({
+      ...(prefix === undefined ? {} : { prefix }),
+      order: "createdAt",
+    });
+    return images.at(-1);
   }
 
   /** One stored image, or `undefined` when absent. */

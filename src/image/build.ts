@@ -10,7 +10,8 @@ import type { CreateOptions, CreateSource, Limactl } from "../limactl.ts";
 import type { LimaInstance, WaitReadyOptions } from "../instance.ts";
 import type { CommandRunner } from "../runner.ts";
 import type { CallOptions } from "../options.ts";
-import { ImageBuildError } from "./errors.ts";
+import type { LimaConfig } from "../config/types.ts";
+import { ImageBuildError, ImageDiskFloorError } from "./errors.ts";
 import type { QemuImgLike } from "./qemu_img_like.ts";
 import type {
   BuiltImage,
@@ -19,7 +20,12 @@ import type {
   ImageFormat,
 } from "./types.ts";
 import { captureImage } from "./capture.ts";
-import { hostArch, type LimaArch } from "./spec.ts";
+import {
+  configFromImage,
+  diskFloorGiB,
+  hostArch,
+  type LimaArch,
+} from "./spec.ts";
 
 /**
  * One build-time provisioning step, discriminated by key:
@@ -67,10 +73,107 @@ export type BuildStep =
     readonly comment?: string;
   };
 
+/**
+ * Derive the builder VM from an already-built image — the shape that turns a
+ * one-shot build into a chain of generations.
+ *
+ * The image is pinned by digest as the sole `images:` entry (see
+ * {@linkcode configFromImage}), and {@linkcode buildImage} takes two things
+ * from it that an opaque config cannot supply: the builder's disk floor
+ * ({@linkcode diskFloorGiB}) and the arch its cross-build preflight checks.
+ */
+export interface ImageBaseImage {
+  /** The image to build on top of. */
+  readonly image: BuiltImage;
+  /**
+   * Extra builder config, merged UNDER the image: the image's `images:` entry
+   * and `arch` always win, so this cannot accidentally unpin the base.
+   */
+  readonly config?: LimaConfig;
+}
+
+/**
+ * Where the builder VM's configuration comes from: any
+ * {@linkcode CreateSource} (template, url, file, yaml, typed config), or
+ * {@linkcode ImageBaseImage} to derive from an image you already built.
+ */
+export type ImageBase = CreateSource | ImageBaseImage;
+
+/** What {@linkcode buildImage} will actually hand {@linkcode Limactl.create}. */
+export interface ResolvedImageBase {
+  /** The create source. */
+  readonly source: CreateSource;
+  /** Builder flags: builder defaults ← the base image's disk floor ← `create`. */
+  readonly create: CreateOptions;
+  /**
+   * The guest arch this build targets — `arch` when given, else the base
+   * image's. Drives the cross-arch preflight. NOT emitted as `--arch`: a
+   * derived config already pins `arch:` in the YAML piped on stdin.
+   */
+  readonly arch?: LimaArch;
+}
+
+/** Builder VM flags applied before the base image's floor and the caller's `create`. */
+const BUILDER_DEFAULTS: CreateOptions = {
+  plain: true,
+  cpus: 2,
+  memoryGiB: 2,
+  diskGiB: 10,
+};
+
+/**
+ * Compile a base plus flag overrides into what the builder create needs.
+ *
+ * Pure and synchronous: it opens nothing and spawns nothing, so it is
+ * deep-equal assertable with no runner and no binary on PATH.
+ *
+ * Throws {@linkcode ImageDiskFloorError} when an explicit `create.diskGiB` is
+ * below the base image's floor — the same boot Lima would refuse, caught
+ * before a VM exists.
+ */
+export function resolveImageBase(
+  base: ImageBase,
+  create: CreateOptions = {},
+  arch?: LimaArch,
+): ResolvedImageBase {
+  if (!("image" in base)) {
+    return {
+      source: base,
+      create: {
+        ...BUILDER_DEFAULTS,
+        ...(arch === undefined ? {} : { arch }),
+        ...create,
+      },
+      ...(arch === undefined ? {} : { arch }),
+    };
+  }
+
+  const floor = diskFloorGiB(base.image);
+  if (create.diskGiB !== undefined && create.diskGiB < floor) {
+    throw new ImageDiskFloorError(base.image, create.diskGiB, floor);
+  }
+  const resolvedArch = arch ?? base.image.arch;
+  return {
+    source: { config: configFromImage(base.image, base.config ?? {}) },
+    create: {
+      ...BUILDER_DEFAULTS,
+      // The floor only ratchets up: a base larger than the default demands
+      // more, a smaller one keeps the default.
+      diskGiB: Math.max(BUILDER_DEFAULTS.diskGiB ?? 0, floor),
+      ...(arch === undefined ? {} : { arch }),
+      ...create,
+    },
+    ...(resolvedArch === undefined ? {} : { arch: resolvedArch }),
+  };
+}
+
 /** What to build. */
 export interface ImageBuildSpec {
-  /** The builder VM's config source (template, url, file, yaml, or typed config). */
-  readonly base: CreateSource;
+  /**
+   * The builder VM's config source: a {@linkcode CreateSource}, or
+   * `{ image }` to derive from an image you already built.
+   */
+  readonly base: ImageBase;
   /** Host path for the produced image. */
   readonly outputPath: string;
   /** Output format. @default "qcow2" */
@@ -202,7 +305,6 @@ export async function buildImage(
   const qemuImg = options.qemuImg ?? new QemuImg();
   const emit = options.onEvent ?? (() => {});
   const name = spec.name ?? `lima-img-build-${crypto.randomUUID().slice(0, 8)}`;
-  const crossArch = spec.arch !== undefined && spec.arch !== hostArch();
 
   let phase: ImageBuildPhase = "preflight";
   let stepIndex: number | undefined;
@@ -210,13 +312,22 @@ export async function buildImage(
 
   try {
     emit({ type: "phase", phase, instance: name });
+    // Resolving inside the try means a disk-floor conflict surfaces as an
+    // ImageBuildError in the preflight phase, like every other early refusal.
+    const resolved = resolveImageBase(spec.base, spec.create, spec.arch);
+    // An image base carries its own arch, so a derived cross-build is caught
+    // here too rather than failing inside limactl minutes later.
+    const crossArch = resolved.arch !== undefined &&
+      resolved.arch !== hostArch();
     if (crossArch) {
-      const vmType = spec.create?.vmType ??
-        ("config" in spec.base ? spec.base.config.vmType : undefined);
+      const vmType = resolved.create.vmType ??
+        ("config" in resolved.source
+          ? resolved.source.config.vmType
+          : undefined);
       if (vmType !== "qemu") {
         throw new ImageBuildError(phase, name, {
           cause: new Error(
-            `cross-arch builds (${spec.arch} on ${hostArch()}) need ` +
+            `cross-arch builds (${resolved.arch} on ${hostArch()}) need ` +
               'vmType: "qemu" + QEMU installed (brew install qemu)',
           ),
         });
@@ -230,13 +341,8 @@ export async function buildImage(
 
     phase = "create";
     emit({ type: "phase", phase, instance: name });
-    vm = await lima.create(name, spec.base, {
-      plain: true,
-      cpus: 2,
-      memoryGiB: 2,
-      diskGiB: 10,
-      ...(spec.arch === undefined ? {} : { arch: spec.arch }),
-      ...spec.create,
+    vm = await lima.create(name, resolved.source, {
+      ...resolved.create,
       ...call,
     });
 

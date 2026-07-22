@@ -24,6 +24,23 @@ export function hostArch(): "x86_64" | "aarch64" {
 }
 
 /**
+ * The smallest whole-GiB `--disk` that can boot `image`:
+ * `ceil(virtualSizeBytes / 1024 ** 3)`. Lima grows a disk on boot but refuses
+ * to shrink one, so this floor ratchets upward along a chain of derived
+ * images.
+ *
+ * This is a BUILDER-side number ({@linkcode CreateOptions.diskGiB});
+ * {@linkcode buildImage} applies it automatically for an
+ * {@linkcode ImageBaseImage} base. Reach for it directly only to ask for a
+ * bigger-but-legal disk: `diskGiB: Math.max(20, diskFloorGiB(image))`.
+ * Consumers *booting* an image do not need it — see
+ * {@linkcode configFromImage}.
+ */
+export function diskFloorGiB(image: BuiltImage): number {
+  return Math.ceil(image.virtualSizeBytes / 1024 ** 3);
+}
+
+/**
  * Turn a built image into an `images:` entry: absolute `location`, the
  * image's `arch` and `digest`. Overrides win field-by-field.
  */
@@ -47,8 +64,12 @@ export function toImageSpec(
  * fail loudly instead. Append fallbacks yourself via {@linkcode toImageSpec}.
  *
  * Constraints the caller owns:
- * - `disk` must be >= {@linkcode BuiltImage.virtualSizeBytes} (Lima grows
- *   disks on boot but refuses to shrink them);
+ * - if you set `disk`, it must be >= {@linkcode BuiltImage.virtualSizeBytes}
+ *   (Lima grows disks on boot but refuses to shrink them). Omitting it is the
+ *   usual right answer: Lima's own default is far above any image this
+ *   toolkit produces, so computing a `disk` from the image's virtual size
+ *   only shrinks the VM. The floor matters on the *builder* side, where
+ *   {@linkcode diskFloorGiB} applies it;
  * - booting a foreign-arch image needs `vmType: "qemu"` on the consuming
  *   host — not auto-set here, because the rendered config may be shared
  *   across hosts.

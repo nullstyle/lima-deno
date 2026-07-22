@@ -30,10 +30,30 @@ breaking changes ride a minor bump.
     atomically-written `manifest.json`; `put`/`get`/`list`/`remove`/`resolve`.
   - Progress via a typed `onEvent` callback (phases, steps, digest progress) —
     the library still never logs.
+- `base: { image }` — derive a build from an image you already built.
+  `buildImage` pins it by digest, sizes the builder's disk to its virtual size
+  (`diskFloorGiB`; a smaller explicit `create.diskGiB` throws
+  `ImageDiskFloorError`), and infers its arch — which also fixes a hole where a
+  derived cross-arch build skipped its preflight and failed inside limactl
+  minutes later. `resolveImageBase` exposes the whole compilation as a pure,
+  assertable function.
+- `formatImageEvent(event)` — renders one progress event, or `undefined` when
+  there is nothing worth printing (`digest-progress` fires per hashed chunk, so
+  throttling stays yours). The library still never logs.
+- `ImageStore.latest(prefix?)` and `list({ prefix, order })` — ordering by the
+  `createdAt` already in the manifest, so image generations need no naming
+  convention and `gen10` cannot sort before `gen2`. No manifest schema change.
+- `withInstance(lima, name, source, fn, options?)` — create, wait, run, delete,
+  with `keepOnSuccess`/`keepOnFailure`. It owns and deletes `name`.
 - `CreateOptions.arch` → `limactl start --arch=…`.
+- `examples/devbox_image.ts` — the image lifecycle end to end: build, derive a
+  new generation from the last, catalog it, boot one, rebase to collapse layers.
+  Not published; it lives in the repo.
 - `tools/image_smoke.ts` (`deno task smoke:image`): the manual real-VM gate —
   build → tamper-check the digest pin → boot a derived VM → assert baked
-  provisioning, fresh machine-id, and disk growth; cross-arch section behind
+  provisioning, fresh machine-id, and disk growth → derive a second generation
+  from the built image and prove both generations' provisioning survives →
+  assert the disk floor is refused in preflight; cross-arch section behind
   `IMAGE_SMOKE_CROSS_ARCH=1`.
 
 ### Changed

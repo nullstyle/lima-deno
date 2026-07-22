@@ -122,16 +122,22 @@ export {
   type CaptureImageOptions,
   configFromImage,
   DEFAULT_SEAL_SCRIPT,
+  diskFloorGiB,
+  formatImageEvent,
   hostArch,
+  type ImageBase,
+  type ImageBaseImage,
   ImageBuildError,
   type ImageBuildOptions,
   type ImageBuildPhase,
   type ImageBuildSpec,
   ImageCaptureError,
+  ImageDiskFloorError,
   type ImageEvent,
   type ImageFormat,
   ImageStore,
   ImageStoreError,
+  type ImageStoreListOptions,
   type ImageStoreOptions,
   type ImageStorePutOptions,
   type LimaArch,
@@ -139,11 +145,16 @@ export {
   type QemuImgLike,
   type QemuImgLikeConvertOptions,
   type QemuImgLikeInfo,
+  type ResolvedImageBase,
+  resolveImageBase,
   sha256File,
   type Sha256FileOptions,
   type StoredImage,
   toImageSpec,
 } from "./src/image/mod.ts";
+
+// Throwaway instances:
+export { withInstance, type WithInstanceOptions } from "./src/ephemeral.ts";
 
 // Convenience re-exports from the qemu-img driver dependency (the class
 // itself lives in `@nullstyle/qemu-img`; option types here reference it only
